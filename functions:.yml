@@ -1,0 +1,65 @@
+functions:
+  create:
+    handler: todos/create.handler
+    events:
+      - http:
+          method: post
+          path: /todos
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+          request:
+            parameters:
+              headers:
+                x-amazon-apigateway-api-key-source: HEADER
+                x-amazon-apigateway-api-key-required: true
+            schema:
+              application/json: ${file(models/create-todo.json)}
+  get:
+    handler: todos/get.handler
+    events:
+      - http:
+          method: get
+          path: /todos/{id}
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+          request:
+            parameters:
+              headers:
+                x-amazon-apigateway-api-key-source: HEADER
+                x-amazon-apigateway-api-key-required: true
+            schema:
+              application/json: ${file(models/get-todo.json)}
+  list:
+    handler: todos/list.handler
+    events:
+      - http:
+          method: get
+          path: /todos
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+          request:
+            parameters:
+              headers:
+                x-amazon-apigateway-api-key-source: HEADER
+                x-amazon-apigateway-api-key-required: true
+            schema:
+              application/json: ${file(models/list-todos.json)}
+  update:
+    handler: todos/update.handler
+    events:
+      - http:
+          method: put
+          path: /todos/{id}
+          private: true
+          authorizer:
+            type:
+COGNITOUSERPOOLS authorizerId: Ref: ApiGatewayAuthorizer request: parameters: headers: x-amazon-apigateway-api-key-source: HEADER x-amazon-apigateway-api-key-required: true schema: application/json: ${file(models/update-todo.json)} delete: handler: todos/delete.handler events: - http: method: delete path: /todos/{id} private: true authorizer: type: COGNITOUSERPOOLS authorizerId: Ref: ApiGatewayAuthorizer request: parameters: headers: x-amazon-apigateway-api-key-source: HEADER x-amazon-apigateway-api-key-required: true schema: application/json: ${file(models/delete-todo.json)} signup: handler: auth/signup.handler events: - http: method: post path: /auth/signup cors: true login: handler: auth/login.handler events: - http: method: post path: /auth/login cors: true

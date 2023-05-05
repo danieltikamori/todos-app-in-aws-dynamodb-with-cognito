@@ -1,0 +1,232 @@
+service: todos-app-cognito-dynamodb
+
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: nodejs18.x # Set the desired version
+  region: us-west-2 # Set the desired region
+  stage: dev
+  environment:
+    accountId: ${AWS::AccountId}
+    COGNITO_ID: !Ref CognitoUserPool
+    COGNITO_USER_POOL_CLIENT_ID: !Ref CognitoUserPoolClient
+    # JWT_SECRET:
+    DYNAMODB_TABLE: ${self:custom.todosTableName}
+    TODOS_TABLE_NAME: ${self:custom.todosTableName}
+
+custom:
+  todosTableName: todos #Set the desired dynamodb table name in lower case, without spaces and special chars
+  # jwtSecret: ${environment:JWT_SECRET}
+  webpack:
+    webpackConfig: "webpack.config.js" # Name of webpack configuration file
+    includeModules: true # Node modules configuration for packaging
+    # forceExclude:
+    #   - aws-sdk
+    packager: "npm" # Packager that will be used to package your external modules
+    excludeFiles: src/**/*.test.js # Provide a glob for files to ignore
+
+plugins:
+  - serverless-plugin-scripts
+  - serverless-webpack
+  - aws-cognito-idp-userpool-domain
+
+functions:
+  create:
+    handler: todos/create.handler
+    events:
+      - http:
+          method: post
+          path: /todos
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  get:
+    handler: todos/get.handler
+    events:
+      - http:
+          method: get
+          path: /todos/{id}
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  list:
+    handler: todos/list.handler
+    events:
+      - http:
+          method: get
+          path: /todos
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  update:
+    handler: todos/update.handler
+    events:
+      - http:
+          method: put
+          path: /todos/{id}
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  delete:
+    handler: todos/delete.handler
+    events:
+      - http:
+          method: delete
+          path: /todos/{id}
+          private: true
+          authorizer:
+            type: COGNITO_USER_POOLS
+            authorizerId:
+              Ref: ApiGatewayAuthorizer
+  signup:
+    handler: auth/signup.handler
+    events:
+      - http:
+          method: post
+          path: /auth/signup
+          cors: true
+  login:
+    handler: auth/login.handler
+    events:
+      - http:
+          method: post
+          path: /auth/login
+          cors: true
+
+resources:
+  Resources:
+    TodosTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        TableName: ${self:custom.todosTableName}
+        AttributeDefinitions:
+          - AttributeName: id
+            AttributeType: S
+        KeySchema:
+          - AttributeName: id
+            KeyType: HASH
+        BillingMode: PAY_PER_REQUEST  #Set the desired mode
+
+    CognitoUserPool:
+      Type: "AWS::Cognito::UserPool"
+      Properties:
+        UserPoolName: ${self:service}-user-pool
+        AutoVerifiedAttributes:
+          - email
+        EmailVerificationSubject: Your verification code
+        EmailVerificationMessage: Your verification code is {####}.
+        AdminCreateUserConfig:
+          AllowAdminCreateUserOnly: false
+          InviteMessageTemplate:
+            EmailMessage: Your username is {username} and temporary password is {####}. Please sign in using this temporary password and change your password.
+            EmailSubject: Your temporary password
+        Policies:
+          PasswordPolicy:
+            MinimumLength: 14
+            RequireLowercase: true
+            RequireNumbers: true
+            RequireSymbols: true
+            RequireUppercase: true
+        MfaConfiguration: OFF #If want to enable MFA, do it manually, deploying with it enabled, may cause issues.
+        EmailConfiguration:
+          EmailSendingAccount: COGNITO_DEFAULT
+        Schema:
+          - AttributeDataType: String
+          - Name: email
+            Required: true
+          - AttributeDataType: String
+          - Name: name
+            Required: true
+        UsernameAttributes:
+          - email
+        AccountRecoverySetting:
+          RecoveryMechanisms:
+            - Name: verified_email
+              Priority: 1
+
+    CognitoUserPoolClient:
+      Type: "AWS::Cognito::UserPoolClient"
+      Properties:
+        UserPoolId: !Ref CognitoUserPool
+        ClientName: ${self:service}-user-pool-client
+        GenerateSecret: false
+        ExplicitAuthFlows:
+          - USER_PASSWORD_AUTH
+        CallbackURLs: # Type your desired callback URLs below
+          - https://example.com/callback
+        LogoutURLs: #Type your desired allowed sign-out URLs
+          - https://example.com/logout
+        AllowedOAuthFlowsUserPoolClient: True
+        SupportedIdentityProviders:
+          - COGNITO
+        AllowedOAuthFlows:
+          - code
+        AllowedOAuthScopes:
+          - email
+          - openid
+          - phone
+          - profile
+        AccessTokenValidity: 8
+        IdTokenValidity: 8
+
+    ApiGatewayAuthorizer:
+      Type: "AWS::ApiGateway::Authorizer"
+      Properties:
+        Name: cognito-authorizer
+        IdentitySource: method.request.header.Authorization
+        RestApiId:
+          Ref: "ApiGatewayRestApi"
+        Type: COGNITO_USER_POOLS
+        ProviderARNs:
+          - !GetAtt CognitoUserPool.Arn
+        AuthorizerResultTtlInSeconds: 300
+
+    CognitoUserPoolDomain:
+      Type: "AWS::Cognito::UserPoolDomain"
+      Properties:
+        Domain: ${self:custom.todosTableName} # Type your custom Cognito Hosted subdomain here
+        UserPoolId: !Ref CognitoUserPool
+  # Direct your users to https://<your_domain>.auth.<region>/login?response_type=token&client_id=<your_app_client_id>&redirect_uri=<your_callback_url>
+  # To create a new account, go to: https://<your_domain>.auth.<region>/signup?response_type=token&client_id=<your_app_client_id>&redirect_uri=<your_callback_url>
+  # Can configure at Cognito user pool App client.
+
+# Outputs to use in future improvements
+  Outputs:
+    TodosTableArn:
+      Value:
+        Ref: TodosTable
+      Export:
+        Name: ${self:service}-${self:custom.todosTableName}-Arn
+    TodosTableName:
+      Value: ${self:custom.todosTableName}
+      Export:
+        Name: ${self:service}-${self:custom.todosTableName}-Name
+    UserPoolId:
+      Value:
+        Ref: CognitoUserPool
+      Export:
+        Name: ${self:service}-user-pool-id
+    UserPoolClientId:
+      Value:
+        Ref: CognitoUserPoolClient
+      Export:
+        Name: ${self:service}-user-pool-client-id
+    UserPoolClientArn:
+      Value:
+        Ref: CognitoUserPoolClient
+      Export:
+        Name: ${self:service}-user-pool-client-arn
+    # UserPoolClientDomain:
+    #   Value:
+    #     Ref: CognitoUserPoolClientDomain
+    #   Export:
+    #     Name: ${self:service}-user-pool-client-domain
